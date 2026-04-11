@@ -46,29 +46,31 @@ jobs:
           curl -fL "$ASSET_URL" -o lidarr.tar.gz
 
           echo "Tarball contents (first 20 entries):"
-          tar tzf lidarr.tar.gz | head -20
+          tar tzf lidarr.tar.gz | head -20 || true
 
           tar xzf lidarr.tar.gz
 
-          # Dynamically find where NzbDrone.Core.dll landed — handles any extraction layout
-          CORE_DLL=$(find "$PWD" -name "NzbDrone.Core.dll" -not -path "*/.git/*" 2>/dev/null | head -1)
+          # Dynamically find where the core DLL landed.
+          # Lidarr ≤2.x: NzbDrone.Core.dll  |  Lidarr ≥3.x: Lidarr.Core.dll
+          CORE_DLL=$(find "$PWD" \( -name "NzbDrone.Core.dll" -o -name "Lidarr.Core.dll" \) \
+            -not -path "*/.git/*" 2>/dev/null | head -1)
           if [[ -z "$CORE_DLL" ]]; then
-            echo "::error::NzbDrone.Core.dll not found after extraction"
-            echo "Directory listing:"
-            ls -la
+            echo "::error::Neither NzbDrone.Core.dll nor Lidarr.Core.dll found after extraction"
+            echo "Extracted files:"
+            find "$PWD" -name "*.dll" -not -path "*/.git/*" | head -30
             exit 1
           fi
 
           LIDARR_PATH=$(dirname "$CORE_DLL")
           echo "LIDARR_PATH=$LIDARR_PATH" >> "$GITHUB_ENV"
-          echo "Lidarr DLLs found at: $LIDARR_PATH"
+          echo "Lidarr DLLs found at: $LIDARR_PATH ($(basename "$CORE_DLL"))"
 
-          # Verify the DLLs we depend on are present
-          for dll in NzbDrone.Core.dll NzbDrone.Common.dll NLog.dll FluentValidation.dll Newtonsoft.Json.dll; do
+          # Report which key DLLs are present so failures are easy to diagnose
+          echo "Key DLLs:"
+          for dll in NzbDrone.Core.dll Lidarr.Core.dll NzbDrone.Common.dll Lidarr.Common.dll \
+                     NLog.dll FluentValidation.dll Newtonsoft.Json.dll; do
             if [[ -f "$LIDARR_PATH/$dll" ]]; then
               echo "  ✓ $dll"
-            else
-              echo "  ✗ $dll (missing — build may fail)"
             fi
           done
 
