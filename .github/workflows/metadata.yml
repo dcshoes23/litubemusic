@@ -1,0 +1,95 @@
+name: Extract Project Metadata
+
+on:
+  workflow_call:
+    inputs:
+      override_plugin_name:
+        required: false
+        type: string
+        description: "Override the plugin name if different from repository name"
+        default: ""
+    outputs:
+      plugin_name:
+        description: "The name of the plugin"
+        value: ${{ jobs.metadata.outputs.plugin_name }}
+      package_version:
+        description: "The version of the package"
+        value: ${{ jobs.metadata.outputs.package_version }}
+      build_suffix:
+        description: "Build suffix (framework)"
+        value: ${{ jobs.metadata.outputs.build_suffix }}
+      is_prerelease:
+        description: "Whether this is a prerelease"
+        value: ${{ jobs.metadata.outputs.is_prerelease }}
+      framework:
+        description: "Target framework extracted from project"
+        value: ${{ jobs.metadata.outputs.framework }}
+
+jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    outputs:
+      plugin_name: ${{ steps.extract_plugin_name.outputs.plugin_name }}
+      package_version: ${{ steps.extract_version.outputs.package_version }}
+      build_suffix: ${{ steps.build_info.outputs.build_suffix }}
+      framework: ${{ steps.extract_framework.outputs.framework }}
+      is_prerelease: ${{ steps.extract_version.outputs.is_prerelease }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve plugin name
+        id: extract_plugin_name
+        run: |
+          if [ -n "${{ inputs.override_plugin_name }}" ]; then
+            PLUGIN_NAME="${{ inputs.override_plugin_name }}"
+          else
+            PLUGIN_NAME=$(basename $GITHUB_REPOSITORY)
+          fi
+          echo "plugin_name=$PLUGIN_NAME" >> $GITHUB_OUTPUT
+          echo "Plugin name: $PLUGIN_NAME"
+
+      - name: Extract target framework
+        id: extract_framework
+        run: |
+          # Try Directory.Build.props first, then any .csproj
+          FRAMEWORK=""
+          for f in Directory.Build.props $(find . -name "*.csproj" | head -5); do
+            if [ -f "$f" ]; then
+              MATCH=$(grep -o '<TargetFramework>[^<]*</TargetFramework>' "$f" | sed 's/<[^>]*>//g' | head -1)
+              if [ -n "$MATCH" ]; then
+                FRAMEWORK="$MATCH"
+                echo "Found framework '$FRAMEWORK' in $f"
+                break
+              fi
+            fi
+          done
+          if [ -z "$FRAMEWORK" ]; then
+            FRAMEWORK="net8.0"
+            echo "Framework not found, defaulting to $FRAMEWORK"
+          fi
+          echo "framework=$FRAMEWORK" >> $GITHUB_OUTPUT
+
+      - name: Extract version from tag
+        id: extract_version
+        run: |
+          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+          # Strip branch suffix if present (v1.2.3-branch-name → 1.2.3)
+          if [[ "$TAG_VERSION" == *-* ]]; then
+            TAG_VERSION=${TAG_VERSION%%-*}
+          fi
+          echo "package_version=$TAG_VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $TAG_VERSION"
+          if [[ "$TAG_VERSION" == 0.* ]]; then
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Determine build suffix
+        id: build_info
+        run: |
+          echo "build_suffix=${{ steps.extract_framework.outputs.framework }}" >> $GITHUB_OUTPUT

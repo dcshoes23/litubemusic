@@ -1,0 +1,69 @@
+name: Detect Branch from Tag or Reference
+
+on:
+  workflow_call:
+    inputs:
+      github_ref:
+        required: true
+        type: string
+        description: "The GitHub reference (usually github.ref)"
+    outputs:
+      branch_name:
+        description: "The detected branch name"
+        value: ${{ jobs.detect.outputs.branch_name }}
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      branch_name: ${{ steps.detect_branch.outputs.branch_name }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure all Git refs are available
+        run: |
+          git fetch --prune --unshallow || git fetch --prune
+          git fetch --tags --force
+
+      - name: Detect Branch
+        id: detect_branch
+        run: |
+          if [[ "${{ inputs.github_ref }}" == refs/tags/* ]]; then
+            TAG_NAME=${{ inputs.github_ref }}
+            TAG_NAME=${TAG_NAME#refs/tags/}
+            DEFAULT_BRANCH=$(git remote show origin | grep 'HEAD branch' | cut -d' ' -f5)
+
+            BRANCH_NAME=""
+
+            # Check if tag contains branch suffix: v1.2.3-branch-name
+            if [[ "$TAG_NAME" == v*-* ]]; then
+              TAG_BRANCH=${TAG_NAME#*-}
+              AVAILABLE_BRANCHES=$(git branch -r | grep -v HEAD | sed -e 's/ *origin\///g')
+
+              if echo "$AVAILABLE_BRANCHES" | grep -q "^$TAG_BRANCH$"; then
+                BRANCH_NAME="$TAG_BRANCH"
+              elif echo "$AVAILABLE_BRANCHES" | grep -q "$TAG_BRANCH"; then
+                BRANCH_NAME=$(echo "$AVAILABLE_BRANCHES" | grep "$TAG_BRANCH" | head -n 1)
+              fi
+            fi
+
+            # Try to find branch that contains this tag
+            if [ -z "$BRANCH_NAME" ]; then
+              BRANCH_NAME=$(git branch -r --contains "$TAG_NAME" | grep -v HEAD | sed -e 's/ *origin\///g' | head -n 1)
+            fi
+
+            # Fall back to default branch
+            if [ -z "$BRANCH_NAME" ]; then
+              BRANCH_NAME=$DEFAULT_BRANCH
+            fi
+          else
+            BRANCH_NAME=${{ inputs.github_ref }}
+            BRANCH_NAME=${BRANCH_NAME#refs/heads/}
+          fi
+
+          echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          echo "Detected branch: $BRANCH_NAME"

@@ -1,0 +1,105 @@
+name: Publish GitHub Release
+
+on:
+  workflow_call:
+    inputs:
+      plugin_name:
+        required: true
+        type: string
+        description: "Name of the plugin"
+      package_version:
+        required: true
+        type: string
+        description: "Version number for the release"
+      build_suffix:
+        required: true
+        type: string
+        description: "Build suffix (framework)"
+      is_prerelease:
+        required: true
+        type: string
+        description: "Whether this is a pre-release"
+      is_latestrelease:
+        required: true
+        type: string
+        description: "Whether this should be marked as the latest stable release"
+      release_notes_id:
+        required: true
+        type: string
+        description: "Artifact ID of the generated release notes"
+      git_commit:
+        required: true
+        type: string
+        description: "Git commit SHA"
+      branch_repo_url:
+        required: false
+        type: string
+        description: "Repository URL with branch path"
+        default: ""
+      git_branch:
+        required: true
+        type: string
+        description: "Git branch name (used as target_commitish)"
+    outputs:
+      release_url:
+        description: "URL of the created GitHub release"
+        value: ${{ jobs.publish.outputs.release_url }}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    outputs:
+      release_url: ${{ steps.create_release.outputs.url }}
+
+    steps:
+      - name: Download package artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: plugin-package
+          path: ./artifacts
+
+      - name: Download release notes
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.release_notes_id }}
+          path: ./notes
+
+      - name: Verify artifacts
+        id: verify
+        run: |
+          echo "Artifacts:"
+          find ./artifacts -type f | sort
+
+          ARTIFACT_PATH="./artifacts/${{ inputs.plugin_name }}-${{ inputs.package_version }}.${{ inputs.build_suffix }}.zip"
+          if [ ! -f "$ARTIFACT_PATH" ]; then
+            echo "::error::Artifact not found at: $ARTIFACT_PATH"
+            exit 1
+          fi
+          echo "artifact_path=$ARTIFACT_PATH" >> $GITHUB_OUTPUT
+          echo "Artifact size: $(stat -c%s "$ARTIFACT_PATH") bytes"
+
+          if [ ! -f "./notes/release_notes.md" ]; then
+            echo "::error::Release notes not found"
+            exit 1
+          fi
+          echo "release_notes_path=./notes/release_notes.md" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref }}
+          name: "Release ${{ inputs.package_version }}"
+          body_path: ${{ steps.verify.outputs.release_notes_path }}
+          prerelease: ${{ inputs.is_prerelease == 'true' }}
+          make_latest: ${{ inputs.is_latestrelease == 'true' }}
+          target_commitish: ${{ inputs.git_branch }}
+          files: ${{ steps.verify.outputs.artifact_path }}
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Report release URL
+        if: success()
+        run: |
+          echo "::notice::Released ${{ inputs.plugin_name }} v${{ inputs.package_version }}: ${{ steps.create_release.outputs.url }}"

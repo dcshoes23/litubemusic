@@ -1,0 +1,202 @@
+name: Compile Project
+
+on:
+  workflow_call:
+    inputs:
+      dotnet_version:
+        required: true
+        type: string
+        description: ".NET SDK version to use"
+      plugin_name:
+        required: true
+        type: string
+        description: "Name of the plugin"
+      package_version:
+        required: true
+        type: string
+        description: "Version number for the package"
+      framework:
+        required: true
+        type: string
+        description: "Target framework"
+      git_commit:
+        required: true
+        type: string
+        description: "Git commit SHA"
+      git_branch:
+        required: true
+        type: string
+        description: "Git branch name"
+      git_tag:
+        required: false
+        type: string
+        description: "Git tag if available"
+        default: ""
+      repo_url:
+        required: true
+        type: string
+        description: "Base repository URL"
+      branch_repo_url:
+        required: true
+        type: string
+        description: "Repository URL with branch path"
+      repo_owner:
+        required: true
+        type: string
+        description: "Repository owner"
+    outputs:
+      build_status:
+        description: "Status of the build (success/failure)"
+        value: ${{ jobs.compile.outputs.build_status }}
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    outputs:
+      build_status: ${{ steps.build_result.outputs.status }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ inputs.dotnet_version }}
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Download Lidarr reference DLLs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          RELEASES=$(curl -fsSL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/Lidarr/Lidarr/releases?per_page=20")
+
+          ASSET_URL=$(echo "$RELEASES" | jq -r \
+            '[.[] | .assets[] | select(.name | endswith("linux-core-x64.tar.gz"))] | first | .browser_download_url')
+
+          if [[ -z "$ASSET_URL" || "$ASSET_URL" == "null" ]]; then
+            echo "::error::Could not find a linux-core-x64.tar.gz asset in Lidarr releases"
+            echo "Available releases and assets:"
+            echo "$RELEASES" | jq -r '.[] | .tag_name + "  " + ([.assets[].name] | join(", "))'
+            exit 1
+          fi
+
+          echo "Downloading: $ASSET_URL"
+          curl -fL "$ASSET_URL" -o lidarr.tar.gz
+
+          echo "Tarball contents (first 20 entries):"
+          tar tzf lidarr.tar.gz | head -20 || true
+
+          tar xzf lidarr.tar.gz
+
+          # Support both Lidarr v2.x (NzbDrone.Core.dll) and v3.x (Lidarr.Core.dll)
+          CORE_DLL=$(find "$PWD" \( -name "NzbDrone.Core.dll" -o -name "Lidarr.Core.dll" \) \
+            -not -path "*/.git/*" 2>/dev/null | head -1)
+
+          if [[ -z "$CORE_DLL" ]]; then
+            echo "::error::Neither NzbDrone.Core.dll nor Lidarr.Core.dll found after extraction"
+            echo "Extracted DLLs:"
+            find "$PWD" -name "*.dll" -not -path "*/.git/*" | head -30
+            exit 1
+          fi
+
+          LIDARR_PATH=$(dirname "$CORE_DLL")
+          echo "LIDARR_PATH=$LIDARR_PATH" >> "$GITHUB_ENV"
+          echo "Lidarr DLLs found at: $LIDARR_PATH ($(basename "$CORE_DLL"))"
+
+          echo "Key DLLs present:"
+          for dll in NzbDrone.Core.dll Lidarr.Core.dll NzbDrone.Common.dll Lidarr.Common.dll \
+                     NLog.dll FluentValidation.dll Newtonsoft.Json.dll; do
+            [[ -f "$LIDARR_PATH/$dll" ]] && echo "  ✓ $dll"
+          done
+
+      - name: Display build parameters
+        run: |
+          echo "Plugin:   ${{ inputs.plugin_name }}"
+          echo "Version:  ${{ inputs.package_version }}"
+          echo "Branch:   ${{ inputs.git_branch }}"
+          echo "Commit:   ${{ inputs.git_commit }}"
+          echo "Tag:      ${{ inputs.git_tag }}"
+          echo "Repo:     ${{ inputs.branch_repo_url }}"
+          echo "Owner:    ${{ inputs.repo_owner }}"
+          echo "Framework:${{ inputs.framework }}"
+
+      - name: Restore
+        run: dotnet restore *.sln
+
+      - name: Build
+        run: |
+          dotnet build *.sln -c Release \
+            -p:LidarrPath="${{ env.LIDARR_PATH }}" \
+            -p:Version=${{ inputs.package_version }} \
+            -p:AssemblyVersion=${{ inputs.package_version }} \
+            -p:FileVersion=${{ inputs.package_version }} \
+            -p:Branch="${{ inputs.git_branch }}" \
+            -p:GitCommit="${{ inputs.git_commit }}" \
+            -p:GitTag="${{ inputs.git_tag }}" \
+            -p:RepoUrl="${{ inputs.branch_repo_url }}" \
+            -p:Author="${{ inputs.repo_owner }}" \
+            -v:n
+
+      - name: Collect plugin output
+        id: collect_output
+        run: |
+          OUTPUT_DIR=_output/Release
+          PLUGIN_DIR=plugin-files
+
+          mkdir -p "$PLUGIN_DIR"
+
+          # Copy the merged plugin DLL
+          DLL="$OUTPUT_DIR/Lidarr.Plugin.Litubemusic.dll"
+          if [ ! -f "$DLL" ]; then
+            echo "::error::Plugin DLL not found at $DLL"
+            find . -name "*.dll" -not -path "*/.git/*" | head -20
+            exit 1
+          fi
+          cp "$DLL" "$PLUGIN_DIR/"
+
+          # Copy the plugin manifest
+          MANIFEST=$(find . -name ".lidarr.plugin" -not -path "*/.git/*" | head -1)
+          if [ -n "$MANIFEST" ]; then
+            cp "$MANIFEST" "$PLUGIN_DIR/"
+          fi
+
+          echo "Plugin files:"
+          ls -lh "$PLUGIN_DIR/"
+          echo "plugin_dir=$PLUGIN_DIR" >> $GITHUB_OUTPUT
+
+      - name: Record build result
+        id: build_result
+        run: echo "status=success" >> $GITHUB_OUTPUT
+
+      - name: Upload plugin artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-output
+          path: ${{ steps.collect_output.outputs.plugin_dir }}
+          retention-days: 1
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            ./**/*.binlog
+            ./**/*.log
+          retention-days: 1
+          if-no-files-found: warn
