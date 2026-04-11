@@ -19,36 +19,75 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Download Lidarr nightly
+      - name: Download Lidarr reference DLLs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Fetch the most recent linux-core-x64 build from Lidarr releases
-          ASSET_URL=$(curl -s "https://api.github.com/repos/Lidarr/Lidarr/releases?per_page=10" \
-            | jq -r '[.[] | .assets[] | select(.name | test("linux-core-x64\\.tar\\.gz$"))] | .[0].browser_download_url')
-          echo "Downloading Lidarr from: $ASSET_URL"
-          curl -L "$ASSET_URL" -o lidarr.tar.gz
+          set -euo pipefail
+
+          # Use the authenticated token to avoid API rate limits
+          RELEASES=$(curl -fsSL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/Lidarr/Lidarr/releases?per_page=20")
+
+          # Find the download URL for the linux-core-x64 tarball
+          ASSET_URL=$(echo "$RELEASES" | jq -r \
+            '[.[] | .assets[] | select(.name | endswith("linux-core-x64.tar.gz"))] | first | .browser_download_url')
+
+          if [[ -z "$ASSET_URL" || "$ASSET_URL" == "null" ]]; then
+            echo "::error::Could not find a linux-core-x64.tar.gz asset in Lidarr releases"
+            echo "Available releases and assets:"
+            echo "$RELEASES" | jq -r '.[] | .tag_name + "  " + ([.assets[].name] | join(", "))'
+            exit 1
+          fi
+
+          echo "Downloading: $ASSET_URL"
+          curl -fL "$ASSET_URL" -o lidarr.tar.gz
+
+          echo "Tarball contents (first 20 entries):"
+          tar tzf lidarr.tar.gz | head -20
+
           tar xzf lidarr.tar.gz
-          # The tarball extracts to a 'Lidarr/' directory
-          echo "LIDARR_PATH=$PWD/Lidarr" >> $GITHUB_ENV
-          ls Lidarr/ | head -20
+
+          # Dynamically find where NzbDrone.Core.dll landed — handles any extraction layout
+          CORE_DLL=$(find "$PWD" -name "NzbDrone.Core.dll" -not -path "*/.git/*" 2>/dev/null | head -1)
+          if [[ -z "$CORE_DLL" ]]; then
+            echo "::error::NzbDrone.Core.dll not found after extraction"
+            echo "Directory listing:"
+            ls -la
+            exit 1
+          fi
+
+          LIDARR_PATH=$(dirname "$CORE_DLL")
+          echo "LIDARR_PATH=$LIDARR_PATH" >> "$GITHUB_ENV"
+          echo "Lidarr DLLs found at: $LIDARR_PATH"
+
+          # Verify the DLLs we depend on are present
+          for dll in NzbDrone.Core.dll NzbDrone.Common.dll NLog.dll FluentValidation.dll Newtonsoft.Json.dll; do
+            if [[ -f "$LIDARR_PATH/$dll" ]]; then
+              echo "  ✓ $dll"
+            else
+              echo "  ✗ $dll (missing — build may fail)"
+            fi
+          done
 
       - name: Restore
         run: dotnet restore
 
       - name: Build
-        run: dotnet build -c Release -p:LidarrPath=${{ env.LIDARR_PATH }}
+        run: dotnet build -c Release -p:LidarrPath="${{ env.LIDARR_PATH }}"
 
-      - name: Determine version
+      - name: Determine version and asset name
         run: |
-          # Strip leading 'v' from the tag name (e.g. v1.0.0 → 1.0.0)
           if [[ "$GITHUB_REF_NAME" == v* ]]; then
             VERSION="${GITHUB_REF_NAME#v}"
           else
             VERSION="0.0.0-dev"
           fi
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          # Asset must be named {PluginName}-{version}.net8.0.zip
-          # PluginName matches the 'name' field in .lidarr.plugin
-          echo "ASSET_NAME=Litubemusic-${VERSION}.net8.0.zip" >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          # Must match the 'name' in .lidarr.plugin: Litubemusic-{version}.net8.0.zip
+          echo "ASSET_NAME=Litubemusic-${VERSION}.net8.0.zip" >> "$GITHUB_ENV"
 
       - name: Package
         run: |
