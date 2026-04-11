@@ -1,0 +1,68 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Download Lidarr nightly
+        run: |
+          # Fetch the most recent linux-core-x64 build from Lidarr releases
+          ASSET_URL=$(curl -s "https://api.github.com/repos/Lidarr/Lidarr/releases?per_page=10" \
+            | jq -r '[.[] | .assets[] | select(.name | test("linux-core-x64\\.tar\\.gz$"))] | .[0].browser_download_url')
+          echo "Downloading Lidarr from: $ASSET_URL"
+          curl -L "$ASSET_URL" -o lidarr.tar.gz
+          tar xzf lidarr.tar.gz
+          # The tarball extracts to a 'Lidarr/' directory
+          echo "LIDARR_PATH=$PWD/Lidarr" >> $GITHUB_ENV
+          ls Lidarr/ | head -20
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build -c Release -p:LidarrPath=${{ env.LIDARR_PATH }}
+
+      - name: Determine version
+        run: |
+          # Strip leading 'v' from the tag name (e.g. v1.0.0 → 1.0.0)
+          if [[ "$GITHUB_REF_NAME" == v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="0.0.0-dev"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          # Asset must be named {PluginName}-{version}.net8.0.zip
+          # PluginName matches the 'name' field in .lidarr.plugin
+          echo "ASSET_NAME=Litubemusic-${VERSION}.net8.0.zip" >> $GITHUB_ENV
+
+      - name: Package
+        run: |
+          mkdir dist
+          cp _output/Release/Lidarr.Plugin.Litubemusic.dll dist/
+          cp src/Lidarr.Plugin.Litubemusic/.lidarr.plugin dist/
+          cd dist
+          zip "${{ env.ASSET_NAME }}" Lidarr.Plugin.Litubemusic.dll .lidarr.plugin
+          echo "Created: ${{ env.ASSET_NAME }}"
+          ls -lh
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/${{ env.ASSET_NAME }}
+          generate_release_notes: true
+          prerelease: false
