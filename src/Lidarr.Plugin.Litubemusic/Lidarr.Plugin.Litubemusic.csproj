@@ -1,0 +1,87 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>Lidarr.Plugin.Litubemusic</AssemblyName>
+    <RootNamespace>NzbDrone.Plugin.Litubemusic</RootNamespace>
+    <Description>Import YouTube Music playlists as Lidarr import lists</Description>
+  </PropertyGroup>
+
+  <!--
+    Lidarr reference assemblies — compile-time only, never copied to output.
+    Populated by running: ./setup.sh [/path/to/lidarr]
+    Or override LidarrPath in Directory.Build.props / on the command line.
+  -->
+  <ItemGroup>
+    <Reference Include="NzbDrone.Core">
+      <HintPath>$(LidarrPath)/NzbDrone.Core.dll</HintPath>
+      <Private>false</Private>
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </Reference>
+    <Reference Include="NzbDrone.Common">
+      <HintPath>$(LidarrPath)/NzbDrone.Common.dll</HintPath>
+      <Private>false</Private>
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </Reference>
+    <Reference Include="NLog">
+      <HintPath>$(LidarrPath)/NLog.dll</HintPath>
+      <Private>false</Private>
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </Reference>
+    <Reference Include="FluentValidation">
+      <HintPath>$(LidarrPath)/FluentValidation.dll</HintPath>
+      <Private>false</Private>
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>$(LidarrPath)/Newtonsoft.Json.dll</HintPath>
+      <Private>false</Private>
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </Reference>
+  </ItemGroup>
+
+  <!--
+    ILRepack — merges any bundled NuGet deps into the single plugin DLL.
+    Currently we have no extra deps (all APIs called via Lidarr's own IHttpClient),
+    so ILRepack is a no-op but stays wired up for future additions.
+  -->
+  <ItemGroup>
+    <PackageReference Include="ILRepack.Lib.MSBuild.Task" Version="1.0.9" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!--
+    Release build: merge any output DLLs that aren't Lidarr's own or system DLLs.
+    In practice there are none right now, so the task will simply output the same DLL.
+  -->
+  <Target Name="ILRepack" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <ItemGroup>
+      <ILRepackInputAssemblies Include="$(OutputPath)$(AssemblyName).dll" />
+      <!-- Add extra NuGet DLLs here if future deps are introduced, e.g.:
+      <ILRepackInputAssemblies Include="$(OutputPath)SomeLib.dll" />
+      Exclude Lidarr-provided and system assemblies: -->
+    </ItemGroup>
+    <ILRepack
+      Parallel="true"
+      Internalize="false"
+      InputAssemblies="@(ILRepackInputAssemblies)"
+      LibraryPath="$(OutputPath);$(LidarrPath)"
+      OutputFile="$(OutputPath)$(AssemblyName).dll" />
+  </Target>
+
+  <!--
+    Optional: copy the built DLL + manifest to the local Lidarr plugins folder.
+    Usage: dotnet build -c Release -p:LidarrPluginsDir=$HOME/.config/Lidarr/plugins
+  -->
+  <Target Name="InstallPlugin" AfterTargets="ILRepack"
+          Condition="'$(Configuration)' == 'Release' and '$(LidarrPluginsDir)' != ''">
+    <PropertyGroup>
+      <_PluginInstallDir>$(LidarrPluginsDir)/dcshoes23/Lidarr.Plugin.Litubemusic/</_PluginInstallDir>
+    </PropertyGroup>
+    <MakeDir Directories="$(_PluginInstallDir)" />
+    <Copy SourceFiles="$(OutputPath)$(AssemblyName).dll"
+          DestinationFolder="$(_PluginInstallDir)" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)/.lidarr.plugin"
+          DestinationFolder="$(_PluginInstallDir)" />
+    <Message Text="Plugin installed to $(_PluginInstallDir)" Importance="high" />
+  </Target>
+
+</Project>

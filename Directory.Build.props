@@ -1,0 +1,28 @@
+<Project>
+  <PropertyGroup>
+    <PluginName>Lidarr.Plugin.Litubemusic</PluginName>
+    <PluginOwner>dcshoes23</PluginOwner>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <InformationalVersion>1.0.0</InformationalVersion>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <Optimize>true</Optimize>
+
+    <!-- Centralise all build output under _output/ -->
+    <OutputPath>$(MSBuildThisFileDirectory)_output/$(Configuration)/</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+
+    <!--
+      LidarrPath points to a Lidarr installation (or build output) that contains the
+      reference assemblies needed at compile time. Override on the command line:
+        dotnet build -p:LidarrPath=/path/to/Lidarr
+    -->
+    <LidarrPath Condition="'$(LidarrPath)' == '' and $([MSBuild]::IsOsPlatform('Linux'))">/opt/Lidarr</LidarrPath>
+    <LidarrPath Condition="'$(LidarrPath)' == '' and $([MSBuild]::IsOsPlatform('OSX'))">/Applications/Lidarr.app/Contents/MacOS</LidarrPath>
+    <LidarrPath Condition="'$(LidarrPath)' == '' and $([MSBuild]::IsOsPlatform('Windows'))">C:\ProgramData\Lidarr\bin</LidarrPath>
+  </PropertyGroup>
+</Project>
