@@ -7,36 +7,16 @@
   </PropertyGroup>
 
   <!--
-    Lidarr reference assemblies — compile-time only, never copied to output.
-    Populated by running: ./setup.sh [/path/to/lidarr]
-    Or override LidarrPath in Directory.Build.props / on the command line.
+    Lidarr reference assemblies — built from the git submodule at Submodules/Lidarr.
+    Run `git submodule update --init --recursive` after cloning.
   -->
   <ItemGroup>
-    <Reference Include="NzbDrone.Core">
-      <HintPath>$(LidarrPath)/NzbDrone.Core.dll</HintPath>
+    <ProjectReference Include="..\..\Submodules\Lidarr\src\NzbDrone.Common\Lidarr.Common.csproj">
       <Private>false</Private>
-      <ExcludeAssets>runtime</ExcludeAssets>
-    </Reference>
-    <Reference Include="NzbDrone.Common">
-      <HintPath>$(LidarrPath)/NzbDrone.Common.dll</HintPath>
+    </ProjectReference>
+    <ProjectReference Include="..\..\Submodules\Lidarr\src\NzbDrone.Core\Lidarr.Core.csproj">
       <Private>false</Private>
-      <ExcludeAssets>runtime</ExcludeAssets>
-    </Reference>
-    <Reference Include="NLog">
-      <HintPath>$(LidarrPath)/NLog.dll</HintPath>
-      <Private>false</Private>
-      <ExcludeAssets>runtime</ExcludeAssets>
-    </Reference>
-    <Reference Include="FluentValidation">
-      <HintPath>$(LidarrPath)/FluentValidation.dll</HintPath>
-      <Private>false</Private>
-      <ExcludeAssets>runtime</ExcludeAssets>
-    </Reference>
-    <Reference Include="Newtonsoft.Json">
-      <HintPath>$(LidarrPath)/Newtonsoft.Json.dll</HintPath>
-      <Private>false</Private>
-      <ExcludeAssets>runtime</ExcludeAssets>
-    </Reference>
+    </ProjectReference>
   </ItemGroup>
 
   <!--
@@ -63,7 +43,7 @@
       Parallel="true"
       Internalize="false"
       InputAssemblies="@(ILRepackInputAssemblies)"
-      LibraryPath="$(OutputPath);$(LidarrPath)"
+      LibraryPath="$(OutputPath)"
       OutputFile="$(OutputPath)$(AssemblyName).dll" />
   </Target>
 

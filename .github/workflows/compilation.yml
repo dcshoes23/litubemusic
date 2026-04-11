@@ -56,9 +56,10 @@ jobs:
       build_status: ${{ steps.build_result.outputs.status }}
 
     steps:
-      - name: Checkout
+      - name: Checkout with submodules
         uses: actions/checkout@v4
         with:
+          submodules: 'recursive'
           fetch-depth: 0
 
       - name: Setup .NET
@@ -74,66 +75,33 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: Download Lidarr reference DLLs
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify Lidarr submodule
         run: |
-          set -euo pipefail
+          echo "Lidarr submodule contents:"
+          ls -la Submodules/Lidarr/src/ || echo "::error::Lidarr submodule not initialised"
 
-          RELEASES=$(curl -fsSL \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/Lidarr/Lidarr/releases?per_page=20")
+          COMMON_CSPROJ="Submodules/Lidarr/src/NzbDrone.Common/Lidarr.Common.csproj"
+          CORE_CSPROJ="Submodules/Lidarr/src/NzbDrone.Core/Lidarr.Core.csproj"
 
-          ASSET_URL=$(echo "$RELEASES" | jq -r \
-            '[.[] | .assets[] | select(.name | endswith("linux-core-x64.tar.gz"))] | first | .browser_download_url')
-
-          if [[ -z "$ASSET_URL" || "$ASSET_URL" == "null" ]]; then
-            echo "::error::Could not find a linux-core-x64.tar.gz asset in Lidarr releases"
-            echo "Available releases and assets:"
-            echo "$RELEASES" | jq -r '.[] | .tag_name + "  " + ([.assets[].name] | join(", "))'
-            exit 1
-          fi
-
-          echo "Downloading: $ASSET_URL"
-          curl -fL "$ASSET_URL" -o lidarr.tar.gz
-
-          echo "Tarball contents (first 20 entries):"
-          tar tzf lidarr.tar.gz | head -20 || true
-
-          tar xzf lidarr.tar.gz
-
-          # Support both Lidarr v2.x (NzbDrone.Core.dll) and v3.x (Lidarr.Core.dll)
-          CORE_DLL=$(find "$PWD" \( -name "NzbDrone.Core.dll" -o -name "Lidarr.Core.dll" \) \
-            -not -path "*/.git/*" 2>/dev/null | head -1)
-
-          if [[ -z "$CORE_DLL" ]]; then
-            echo "::error::Neither NzbDrone.Core.dll nor Lidarr.Core.dll found after extraction"
-            echo "Extracted DLLs:"
-            find "$PWD" -name "*.dll" -not -path "*/.git/*" | head -30
-            exit 1
-          fi
-
-          LIDARR_PATH=$(dirname "$CORE_DLL")
-          echo "LIDARR_PATH=$LIDARR_PATH" >> "$GITHUB_ENV"
-          echo "Lidarr DLLs found at: $LIDARR_PATH ($(basename "$CORE_DLL"))"
-
-          echo "Key DLLs present:"
-          for dll in NzbDrone.Core.dll Lidarr.Core.dll NzbDrone.Common.dll Lidarr.Common.dll \
-                     NLog.dll FluentValidation.dll Newtonsoft.Json.dll; do
-            [[ -f "$LIDARR_PATH/$dll" ]] && echo "  ✓ $dll"
+          for f in "$COMMON_CSPROJ" "$CORE_CSPROJ"; do
+            if [ -f "$f" ]; then
+              echo "  ✓ $f"
+            else
+              echo "::error::Missing: $f"
+              exit 1
+            fi
           done
 
       - name: Display build parameters
         run: |
-          echo "Plugin:   ${{ inputs.plugin_name }}"
-          echo "Version:  ${{ inputs.package_version }}"
-          echo "Branch:   ${{ inputs.git_branch }}"
-          echo "Commit:   ${{ inputs.git_commit }}"
-          echo "Tag:      ${{ inputs.git_tag }}"
-          echo "Repo:     ${{ inputs.branch_repo_url }}"
-          echo "Owner:    ${{ inputs.repo_owner }}"
-          echo "Framework:${{ inputs.framework }}"
+          echo "Plugin:    ${{ inputs.plugin_name }}"
+          echo "Version:   ${{ inputs.package_version }}"
+          echo "Branch:    ${{ inputs.git_branch }}"
+          echo "Commit:    ${{ inputs.git_commit }}"
+          echo "Tag:       ${{ inputs.git_tag }}"
+          echo "Repo:      ${{ inputs.branch_repo_url }}"
+          echo "Owner:     ${{ inputs.repo_owner }}"
+          echo "Framework: ${{ inputs.framework }}"
 
       - name: Restore
         run: dotnet restore *.sln
@@ -141,7 +109,6 @@ jobs:
       - name: Build
         run: |
           dotnet build *.sln -c Release \
-            -p:LidarrPath="${{ env.LIDARR_PATH }}" \
             -p:Version=${{ inputs.package_version }} \
             -p:AssemblyVersion=${{ inputs.package_version }} \
             -p:FileVersion=${{ inputs.package_version }} \
@@ -160,17 +127,15 @@ jobs:
 
           mkdir -p "$PLUGIN_DIR"
 
-          # Copy the merged plugin DLL
           DLL="$OUTPUT_DIR/Lidarr.Plugin.Litubemusic.dll"
           if [ ! -f "$DLL" ]; then
             echo "::error::Plugin DLL not found at $DLL"
-            find . -name "*.dll" -not -path "*/.git/*" | head -20
+            find . -name "Lidarr.Plugin.*.dll" | head -10
             exit 1
           fi
           cp "$DLL" "$PLUGIN_DIR/"
 
-          # Copy the plugin manifest
-          MANIFEST=$(find . -name ".lidarr.plugin" -not -path "*/.git/*" | head -1)
+          MANIFEST=$(find . -name ".lidarr.plugin" -not -path "*/Submodules/*" -not -path "*/.git/*" | head -1)
           if [ -n "$MANIFEST" ]; then
             cp "$MANIFEST" "$PLUGIN_DIR/"
           fi

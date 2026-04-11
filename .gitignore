@@ -1,6 +1,5 @@
 # Build output
 _output/
-_lidarr_ref/
 bin/
 obj/
 

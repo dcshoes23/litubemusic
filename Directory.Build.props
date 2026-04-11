@@ -16,13 +16,5 @@
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
 
-    <!--
-      LidarrPath points to a Lidarr installation (or build output) that contains the
-      reference assemblies needed at compile time. Override on the command line:
-        dotnet build -p:LidarrPath=/path/to/Lidarr
-    -->
-    <LidarrPath Condition="'$(LidarrPath)' == '' and $([MSBuild]::IsOsPlatform('Linux'))">/opt/Lidarr</LidarrPath>
-    <LidarrPath Condition="'$(LidarrPath)' == '' and $([MSBuild]::IsOsPlatform('OSX'))">/Applications/Lidarr.app/Contents/MacOS</LidarrPath>
-    <LidarrPath Condition="'$(LidarrPath)' == '' and $([MSBuild]::IsOsPlatform('Windows'))">C:\ProgramData\Lidarr\bin</LidarrPath>
   </PropertyGroup>
 </Project>
