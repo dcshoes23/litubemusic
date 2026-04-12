@@ -1,8 +1,6 @@
-using NzbDrone.Core.Plugins;
-
 namespace NzbDrone.Plugin.Litubemusic
 {
-    public class LitubePlugin : Plugin
+    public class LitubePlugin : NzbDrone.Core.Plugins.Plugin
     {
         public override string Name => "Litubemusic";
         public override string Owner => "dcshoes23";
