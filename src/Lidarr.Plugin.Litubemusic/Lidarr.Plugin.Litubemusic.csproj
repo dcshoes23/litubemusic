@@ -6,10 +6,8 @@
     <Description>Import YouTube Music playlists as Lidarr import lists</Description>
   </PropertyGroup>
 
-  <!--
-    Lidarr reference assemblies — built from the git submodule at Submodules/Lidarr.
-    Run `git submodule update --init --recursive` after cloning.
-  -->
+  <!-- Lidarr reference assemblies built from the git submodule at Submodules/Lidarr.
+       Run setup.sh after cloning to initialise the submodule. -->
   <ItemGroup>
     <ProjectReference Include="..\..\Submodules\Lidarr\src\NzbDrone.Common\Lidarr.Common.csproj">
       <Private>false</Private>
