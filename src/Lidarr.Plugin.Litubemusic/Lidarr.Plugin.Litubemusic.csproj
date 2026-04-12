@@ -18,38 +18,10 @@
   </ItemGroup>
 
   <!--
-    ILRepack — merges any bundled NuGet deps into the single plugin DLL.
-    Currently we have no extra deps (all APIs called via Lidarr's own IHttpClient),
-    so ILRepack is a no-op but stays wired up for future additions.
-  -->
-  <ItemGroup>
-    <PackageReference Include="ILRepack.Lib.MSBuild.Task" Version="1.0.9" PrivateAssets="all" />
-  </ItemGroup>
-
-  <!--
-    Release build: merge any output DLLs that aren't Lidarr's own or system DLLs.
-    In practice there are none right now, so the task will simply output the same DLL.
-  -->
-  <Target Name="ILRepack" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
-    <ItemGroup>
-      <ILRepackInputAssemblies Include="$(OutputPath)$(AssemblyName).dll" />
-      <!-- Add extra NuGet DLLs here if future deps are introduced, e.g.:
-      <ILRepackInputAssemblies Include="$(OutputPath)SomeLib.dll" />
-      Exclude Lidarr-provided and system assemblies: -->
-    </ItemGroup>
-    <ILRepack
-      Parallel="true"
-      Internalize="false"
-      InputAssemblies="@(ILRepackInputAssemblies)"
-      LibraryPath="$(OutputPath)"
-      OutputFile="$(OutputPath)$(AssemblyName).dll" />
-  </Target>
-
-  <!--
     Optional: copy the built DLL + manifest to the local Lidarr plugins folder.
     Usage: dotnet build -c Release -p:LidarrPluginsDir=$HOME/.config/Lidarr/plugins
   -->
-  <Target Name="InstallPlugin" AfterTargets="ILRepack"
+  <Target Name="InstallPlugin" AfterTargets="Build"
           Condition="'$(Configuration)' == 'Release' and '$(LidarrPluginsDir)' != ''">
     <PropertyGroup>
       <_PluginInstallDir>$(LidarrPluginsDir)/dcshoes23/Lidarr.Plugin.Litubemusic/</_PluginInstallDir>
