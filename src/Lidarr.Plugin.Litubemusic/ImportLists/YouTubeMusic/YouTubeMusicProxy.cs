@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Net.Http;
 using System.Text;
 using Newtonsoft.Json;
 using NLog;
@@ -225,7 +226,7 @@ namespace NzbDrone.Plugin.Litubemusic.ImportLists.YouTubeMusic
         private YouTubeTokenResponse PostFormForToken(string url, string formBody)
         {
             var request = new HttpRequestBuilder(url).Build();
-            request.Method = HttpMethod.POST;
+            request.Method = HttpMethod.Post;
             request.Headers.ContentType = "application/x-www-form-urlencoded";
             request.ContentData = Encoding.UTF8.GetBytes(formBody);
 

@@ -152,7 +152,7 @@ namespace NzbDrone.Plugin.Litubemusic.ImportLists.YouTubeMusic
             // access_type=offline  → request a refresh token
             // prompt=consent       → always show the consent screen so a refresh token is issued
             // state                → passed through by Google; Lidarr uses it as the callback URL
-            var stateParam = query.GetValueOrDefault("callbackUrl", string.Empty);
+            var stateParam = query.TryGetValue("callbackUrl", out var callbackUrl) ? callbackUrl : string.Empty;
 
             var authUrlBuilder = new HttpRequestBuilder(Settings.OAuthUrl)
                 .AddQueryParam("client_id", Settings.ClientId)
@@ -174,7 +174,7 @@ namespace NzbDrone.Plugin.Litubemusic.ImportLists.YouTubeMusic
             // Lidarr's oauth.html passes back whatever parameters it received from the
             // redirect URI. For our Authorization Code flow that is ?code=XXX.
             // We exchange the code server-side so the client_secret never leaves the server.
-            var code = query.GetValueOrDefault("code");
+            var code = query.TryGetValue("code", out var codeVal) ? codeVal : null;
 
             if (code.IsNullOrWhiteSpace())
             {
