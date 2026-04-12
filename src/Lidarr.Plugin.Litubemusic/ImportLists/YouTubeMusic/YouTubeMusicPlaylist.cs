@@ -133,12 +133,13 @@ namespace NzbDrone.Plugin.Litubemusic.ImportLists.YouTubeMusic
             if (Settings.AccessToken.IsNullOrWhiteSpace())
             {
                 _logger.Debug("[Litubemusic] getPlaylists: not authenticated.");
-                return new { options = new { playlists = Array.Empty<object>() } };
+                return new { options = (object?)null };
             }
 
             try
             {
                 var accessToken = GetAccessToken();
+                var channelTitle = _proxy.GetChannelTitle(accessToken);
                 var playlists = _proxy.GetUserPlaylists(accessToken);
 
                 var options = playlists
@@ -155,16 +156,16 @@ namespace NzbDrone.Plugin.Litubemusic.ImportLists.YouTubeMusic
                 _logger.Debug("[Litubemusic] getPlaylists → {0} playlist(s)", options.Count);
 
                 // Lidarr's FieldType.Playlist widget expects:
-                // { options: { playlists: [{ id, name }, ...] } }
+                // { options: { user: "...", playlists: [{ id, name }, ...] } }
                 return new
                 {
-                    options = new { playlists = options }
+                    options = new { user = channelTitle, playlists = options }
                 };
             }
             catch (Exception ex)
             {
                 _logger.Warn(ex, "[Litubemusic] Failed to retrieve playlists.");
-                return new { options = new { playlists = Array.Empty<object>() } };
+                return new { options = new { user = "YouTube Music", playlists = Array.Empty<object>() } };
             }
         }
 

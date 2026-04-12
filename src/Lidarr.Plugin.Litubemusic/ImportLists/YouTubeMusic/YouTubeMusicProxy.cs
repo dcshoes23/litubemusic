@@ -89,6 +89,27 @@ namespace NzbDrone.Plugin.Litubemusic.ImportLists.YouTubeMusic
     }
 
     // ──────────────────────────────────────────────────────────────
+    // Channel list response (GET /youtube/v3/channels?mine=true)
+    // ──────────────────────────────────────────────────────────────
+    public class YouTubeChannelSnippet
+    {
+        [JsonProperty("title")]
+        public string Title { get; set; } = string.Empty;
+    }
+
+    public class YouTubeChannel
+    {
+        [JsonProperty("snippet")]
+        public YouTubeChannelSnippet Snippet { get; set; } = new();
+    }
+
+    public class YouTubeChannelListResponse
+    {
+        [JsonProperty("items")]
+        public List<YouTubeChannel> Items { get; set; } = new();
+    }
+
+    // ──────────────────────────────────────────────────────────────
     // Proxy interface + implementation
     // ──────────────────────────────────────────────────────────────
     public interface IYouTubeMusicProxy
@@ -102,6 +123,8 @@ namespace NzbDrone.Plugin.Litubemusic.ImportLists.YouTubeMusic
             string clientId, string clientSecret,
             string refreshToken, string tokenUrl);
 
+        string GetChannelTitle(string accessToken);
+
         List<YouTubePlaylist> GetUserPlaylists(string accessToken);
 
         List<YouTubePlaylistItem> GetPlaylistItems(string accessToken, string playlistId);
@@ -109,6 +132,7 @@ namespace NzbDrone.Plugin.Litubemusic.ImportLists.YouTubeMusic
 
     public class YouTubeMusicProxy : IYouTubeMusicProxy
     {
+        private const string ChannelsEndpoint = "https://www.googleapis.com/youtube/v3/channels";
         private const string PlaylistsEndpoint = "https://www.googleapis.com/youtube/v3/playlists";
         private const string PlaylistItemsEndpoint = "https://www.googleapis.com/youtube/v3/playlistItems";
 
@@ -147,6 +171,20 @@ namespace NzbDrone.Plugin.Litubemusic.ImportLists.YouTubeMusic
                 $"client_secret={Uri.EscapeDataString(clientSecret)}");
 
             return PostFormForToken(tokenUrl, body);
+        }
+
+        public string GetChannelTitle(string accessToken)
+        {
+            var request = new HttpRequestBuilder(ChannelsEndpoint)
+                .AddQueryParam("part", "snippet")
+                .AddQueryParam("mine", "true")
+                .AddQueryParam("maxResults", "1")
+                .Build();
+            request.Headers.Add("Authorization", $"Bearer {accessToken}");
+
+            var response = _httpClient.Get<YouTubeChannelListResponse>(request);
+            var channel = response.Resource?.Items?.Count > 0 ? response.Resource.Items[0] : null;
+            return channel?.Snippet?.Title ?? "YouTube Music";
         }
 
         public List<YouTubePlaylist> GetUserPlaylists(string accessToken)
