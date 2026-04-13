@@ -142,7 +142,16 @@ namespace NzbDrone.Plugin.Litubemusic.ImportLists.YouTubeMusic
                 var channelTitle = _proxy.GetChannelTitle(accessToken);
                 var playlists = _proxy.GetUserPlaylists(accessToken);
 
-                var options = playlists
+                // YouTube's API never returns auto-generated playlists in the mine=true
+                // response. Prepend the well-known ones with their fixed IDs so the user
+                // can select them explicitly.
+                var autoPlaylists = new[]
+                {
+                    new { id = "LM", name = "Liked Music" },
+                    new { id = "LL", name = "Liked Videos" }
+                };
+
+                var userPlaylists = playlists
                     .OrderBy(p => p.Snippet?.Title, StringComparer.OrdinalIgnoreCase)
                     .Select(p => new
                     {
@@ -150,10 +159,12 @@ namespace NzbDrone.Plugin.Litubemusic.ImportLists.YouTubeMusic
                         name = p.Snippet?.Title.IsNotNullOrWhiteSpace() == true
                             ? p.Snippet.Title
                             : p.Id
-                    })
-                    .ToList();
+                    });
 
-                _logger.Debug("[Litubemusic] getPlaylists → {0} playlist(s)", options.Count);
+                var options = autoPlaylists.Concat(userPlaylists).ToList<object>();
+
+                _logger.Debug("[Litubemusic] getPlaylists → {0} playlist(s) ({1} auto + {2} user)",
+                    options.Count, autoPlaylists.Length, playlists.Count);
 
                 // Lidarr's FieldType.Playlist widget expects:
                 // { options: { user: "...", playlists: [{ id, name }, ...] } }
